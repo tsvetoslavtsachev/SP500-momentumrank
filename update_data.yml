@@ -2,9 +2,9 @@ name: Update MomentumRank Data
 
 on:
   schedule:
-    # Every weekday at 07:00 UTC (09:00 Sofia time)
-    - cron: "0 7 * * 1-5"
-  workflow_dispatch:   # Позволява ръчно стартиране от Actions таб
+    # Всеки делничен ден в 07:30 UTC (10:30 EEST) — след отваряне на пазара
+    - cron: "30 7 * * 1-5"
+  workflow_dispatch:  # ръчно стартиране от GitHub UI
 
 permissions:
   contents: write
@@ -12,7 +12,7 @@ permissions:
 jobs:
   update-data:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40   # 500 тикера × ~4 сек = ~35 мин
 
     steps:
       - name: Checkout repository
@@ -20,27 +20,33 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-yfinance
-
       - name: Install dependencies
-        run: pip install yfinance pandas numpy lxml html5lib
+        run: |
+          pip install --upgrade pip
+          pip install \
+            "yfinance>=0.2.55" \
+            "pandas>=2.0" \
+            "numpy>=1.24" \
+            "requests>=2.31" \
+            "lxml" \
+            "html5lib"
 
       - name: Run fetch_data.py
         run: python fetch_data.py
+        env:
+          PYTHONUNBUFFERED: "1"   # принудителен flush на print()
 
       - name: Commit and push data.json
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data.json
-          git diff --staged --quiet || git commit -m "chore: update momentum data $(date -u +'%Y-%m-%d %H:%M UTC')"
-          git push
+          git diff --staged --quiet && echo "No changes to commit" || (
+            git commit -m "data: momentum update $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          )
