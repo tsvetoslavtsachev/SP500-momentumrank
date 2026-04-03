@@ -18,12 +18,15 @@ warnings.filterwarnings("ignore")
 
 # ─── 1. Вземи S&P 500 тикъри от Wikipedia ─────────────────────────────────────
 def get_sp500_tickers():
+    import requests
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    tables = pd.read_html(url)
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    tables = pd.read_html(resp.text)
     df = tables[0]
     df.columns = [c.strip() for c in df.columns]
-    # Normalize column names
-    sym_col = [c for c in df.columns if "Symbol" in c or "Ticker" in c][0]
+    sym_col  = [c for c in df.columns if "Symbol" in c or "Ticker" in c][0]
     name_col = [c for c in df.columns if "Security" in c or "Name" in c][0]
     sect_col = [c for c in df.columns if "GICS Sector" in c or "Sector" in c][0]
     result = []
