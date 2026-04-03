@@ -1,4 +1,3 @@
-!/usr/bin/env python3
 """
 MomentumRank S&P 500 — fetch_data.py v5
 Fixes:
