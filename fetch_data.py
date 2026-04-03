@@ -179,7 +179,7 @@ def process_ticker(info, session, crumb, start_dt, end_dt):
     time.sleep(random.uniform(*RATE_SLEEP))
     prices = fetch_prices(session, crumb, sym, start_dt, end_dt)
     if prices is None or len(prices) < 60:
-        print(f"  SKIP {sym}: not enough price data")
+        print("  SKIP " + sym + ": not enough price data")
         return None
 
     time.sleep(random.uniform(0.1, 0.25))
@@ -218,29 +218,38 @@ def main():
 
     print("Loading S&P 500 list from GitHub CSV...")
     tickers = get_sp500_tickers()
-    print(f"  {len(tickers)} tickers loaded")
+    print("  " + str(len(tickers)) + " tickers loaded")
 
     print("Initialising Yahoo Finance session...")
     session, crumb = get_yahoo_session()
-    print(f"  Crumb: {\'OK\' if crumb else \'MISSING - retrying\'}")
+    crumb_status = "OK" if crumb else "MISSING - retrying"
+    print("  Crumb: " + crumb_status)
     if not crumb:
         time.sleep(3)
         session, crumb = get_yahoo_session()
 
     results = []
     total   = len(tickers)
-    print(f"\\nProcessing {total} tickers...\\n")
+    print("")
+    print("Processing " + str(total) + " tickers...")
+    print("")
 
     for i, t in enumerate(tickers, 1):
-        print(f"  [{i:3d}/{total}] {t[\'symbol\']:<8}", end="", flush=True)
+        sym = t["symbol"]
+        print("  [" + str(i).rjust(3) + "/" + str(total) + "] " + sym.ljust(8), end="", flush=True)
         rec = process_ticker(t, session, crumb, start_dt, end_dt)
         if rec:
             results.append(rec)
-            print(f"  score={rec[\'momentumScore\']:5.1f}  vol={rec[\'avgVolume\']:>12,}  cap=${rec[\'marketCap\']/1e9:>7.1f}B")
+            cap_str = str(round(rec["marketCap"] / 1e9, 1)) + "B"
+            print("  score=" + str(rec["momentumScore"]) +
+                  "  vol=" + str(rec["avgVolume"]) +
+                  "  cap=$" + cap_str)
         else:
             print("  SKIPPED")
         if i % 100 == 0:
-            print(f"\\n  Refreshing Yahoo session...\\n")
+            print("")
+            print("  Refreshing Yahoo session...")
+            print("")
             session, crumb = get_yahoo_session()
             time.sleep(2)
 
@@ -250,11 +259,14 @@ def main():
 
     vol_ok = sum(1 for r in results if r["avgVolume"] > 0)
     cap_ok = sum(1 for r in results if r["marketCap"] > 0)
-    print(f"\\nDone: {len(results)} records -> {OUTPUT_FILE}")
-    print(f"avgVolume OK : {vol_ok}/{len(results)}")
-    print(f"marketCap OK : {cap_ok}/{len(results)}")
-    print(f"Top 5        : {[r[\'symbol\'] for r in results[:5]]}")
+    top5   = [r["symbol"] for r in results[:5]]
+    print("")
+    print("Done: " + str(len(results)) + " records -> " + OUTPUT_FILE)
+    print("avgVolume OK : " + str(vol_ok) + "/" + str(len(results)))
+    print("marketCap OK : " + str(cap_ok) + "/" + str(len(results)))
+    print("Top 5        : " + str(top5))
 
 
 if __name__ == "__main__":
     main()
+'''
