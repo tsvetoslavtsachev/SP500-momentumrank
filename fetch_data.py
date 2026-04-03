@@ -1,7 +1,7 @@
-"""
-MomentumRank S&P 500 - fetch_data.py v7
-Fixes: marketCap + avgVolume via Yahoo v7 quote endpoint
-"""
+# MomentumRank S&P 500 - fetch_data.py v7
+# Fixes: marketCap + avgVolume via Yahoo v7 quote endpoint
+# S&P 500 list: GitHub CSV (no Wikipedia)
+
 
 import json, time, random, math
 from datetime import datetime, timedelta
@@ -70,7 +70,6 @@ def get_sp500_tickers():
 
 
 def fetch_quote_data(session, crumb, symbol):
-    """Fetch marketCap + avgVolume from Yahoo v7 quote (most reliable endpoint)."""
     url    = "https://query1.finance.yahoo.com/v7/finance/quote"
     params = {
         "symbols": symbol,
@@ -93,8 +92,7 @@ def fetch_quote_data(session, crumb, symbol):
 
 
 def fetch_prices(session, crumb, symbol, start_dt, end_dt):
-    """Fetch adjusted close prices from Yahoo v8 Chart API."""
-    url    = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+    url    = "https://query1.finance.yahoo.com/v8/finance/chart/" + symbol
     params = {
         "interval":             "1d",
         "period1":              int(start_dt.timestamp()),
@@ -175,16 +173,13 @@ def process_ticker(info, session, crumb, start_dt, end_dt):
     sym    = info["symbol"]
     name   = info["name"]
     sector = info["sector"]
-
     time.sleep(random.uniform(*RATE_SLEEP))
     prices = fetch_prices(session, crumb, sym, start_dt, end_dt)
     if prices is None or len(prices) < 60:
-        print("  SKIP " + sym + ": not enough price data")
+        print("  SKIP " + sym + ": not enough data")
         return None
-
     time.sleep(random.uniform(0.1, 0.25))
     market_cap, avg_vol = fetch_quote_data(session, crumb, sym)
-
     r1m    = calc_return(prices, 21)
     r3m    = calc_return(prices, 63)
     r6m    = calc_return(prices, 126)
@@ -199,7 +194,6 @@ def process_ticker(info, session, crumb, start_dt, end_dt):
     day_chg = round((prices.iloc[-1] / prices.iloc[-2] - 1) * 100, 2) if len(prices) >= 2 else 0.0
     score   = calc_momentum_score(r1m, r3m, r6m, r12m, vol, sharpe, market_cap)
     weight  = round(market_cap / 1e12, 3) if market_cap > 0 else 0.0
-
     return {
         "symbol": sym, "name": name, "sector": sector,
         "price": price, "marketCap": market_cap,
@@ -215,25 +209,20 @@ def main():
     print("=" * 52)
     end_dt   = datetime.utcnow()
     start_dt = end_dt - timedelta(days=LOOKBACK_DAYS)
-
     print("Loading S&P 500 list from GitHub CSV...")
     tickers = get_sp500_tickers()
     print("  " + str(len(tickers)) + " tickers loaded")
-
     print("Initialising Yahoo Finance session...")
     session, crumb = get_yahoo_session()
-    crumb_status = "OK" if crumb else "MISSING - retrying"
-    print("  Crumb: " + crumb_status)
+    print("  Crumb: " + ("OK" if crumb else "MISSING - retrying"))
     if not crumb:
         time.sleep(3)
         session, crumb = get_yahoo_session()
-
     results = []
     total   = len(tickers)
     print("")
     print("Processing " + str(total) + " tickers...")
     print("")
-
     for i, t in enumerate(tickers, 1):
         sym = t["symbol"]
         print("  [" + str(i).rjust(3) + "/" + str(total) + "] " + sym.ljust(8), end="", flush=True)
@@ -247,16 +236,12 @@ def main():
         else:
             print("  SKIPPED")
         if i % 100 == 0:
-            print("")
             print("  Refreshing Yahoo session...")
-            print("")
             session, crumb = get_yahoo_session()
             time.sleep(2)
-
     results.sort(key=lambda x: x["momentumScore"], reverse=True)
     with open(OUTPUT_FILE, "w") as f:
         json.dump(results, f, indent=2)
-
     vol_ok = sum(1 for r in results if r["avgVolume"] > 0)
     cap_ok = sum(1 for r in results if r["marketCap"] > 0)
     top5   = [r["symbol"] for r in results[:5]]
@@ -269,4 +254,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-'''
+
