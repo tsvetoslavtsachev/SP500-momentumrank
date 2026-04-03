@@ -60,8 +60,11 @@ def get_yahoo_session():
 # ── SP500 TICKERS FROM WIKIPEDIA ────────────────────────────────────────────────
 def get_sp500_tickers():
     """Returns list of {symbol, name, sector} with Yahoo-style sector names."""
-    url    = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    tables = pd.read_html(url)
+    url     = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    resp    = requests.get(url, headers=headers, timeout=15)
+    resp.raise_for_status()
+    tables  = pd.read_html(resp.text)   # pass HTML string, not URL
     df     = tables[0]
     df.columns = [c.strip() for c in df.columns]
 
