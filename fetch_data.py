@@ -1,252 +1,253 @@
-"""
-MomentumRank S&P 500 - fetch_data.py v6
-S&P 500 list: GitHub CSV (no HTML parsing)
-"""
-
-import json, time, random, math
-from datetime import datetime, timedelta
-from io import StringIO
-import pandas as pd
-import numpy as np
-import requests
-
-OUTPUT_FILE   = "data.json"
-RATE_SLEEP    = (0.35, 0.75)
-LOOKBACK_DAYS = 400
-
-SECTOR_MAP = {
-    "Information Technology":  "Technology",
-    "Health Care":             "Healthcare",
-    "Financials":              "Financial Services",
-    "Consumer Discretionary":  "Consumer Cyclical",
-    "Consumer Staples":        "Consumer Defensive",
-    "Communication Services":  "Communication Services",
-    "Materials":               "Basic Materials",
-    "Industrials":             "Industrials",
-    "Real Estate":             "Real Estate",
-    "Energy":                  "Energy",
-    "Utilities":               "Utilities",
-}
-
-
-def get_yahoo_session():
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36"
-        ),
-        "Accept":          "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-    })
-    session.get("https://finance.yahoo.com", timeout=12)
-    crumb = None
-    try:
-        r = session.get(
-            "https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=10
-        )
-        if r.status_code == 200 and r.text.strip():
-            crumb = r.text.strip()
-    except Exception:
-        pass
-    return session, crumb
-
-
-def get_sp500_tickers():
-    url  = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
-    resp = requests.get(url, timeout=15)
-    resp.raise_for_status()
-    df   = pd.read_csv(StringIO(resp.text))
-    df.columns = [c.strip() for c in df.columns]
-    records = []
-    for _, row in df.iterrows():
-        sym    = str(row.get("Symbol", row.iloc[0])).strip().replace(".", "-")
-        name   = str(row.get("Name",   row.iloc[1])).strip()
-        sector = SECTOR_MAP.get(str(row.get("Sector", row.iloc[2])).strip(),
-                                str(row.get("Sector", row.iloc[2])).strip())
-        records.append({"symbol": sym, "name": name, "sector": sector})
-    return records
-
-
-def fetch_prices_and_volume(session, crumb, symbol, start_dt, end_dt):
-    url    = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-    params = {
-        "interval":             "1d",
-        "period1":              int(start_dt.timestamp()),
-        "period2":              int(end_dt.timestamp()),
-        "events":               "div,splits",
-        "includeAdjustedClose": "true",
-    }
-    if crumb:
-        params["crumb"] = crumb
-    try:
-        r = session.get(url, params=params, timeout=20)
-        r.raise_for_status()
-        d = r.json()["chart"]["result"][0]
-    except Exception:
-        return None, 0
-    timestamps = d.get("timestamp", [])
-    if not timestamps:
-        return None, 0
-    try:
-        closes = d["indicators"]["adjclose"][0]["adjclose"]
-    except (KeyError, IndexError):
-        closes = d["indicators"]["quote"][0]["close"]
-    volumes = d["indicators"]["quote"][0].get("volume") or []
-    idx     = pd.to_datetime([datetime.utcfromtimestamp(t) for t in timestamps])
-    prices  = pd.Series(closes, index=idx, dtype=float).dropna()
-    vol_s   = pd.Series([v if v else 0 for v in volumes], index=idx)
-    avg_vol = int(vol_s.iloc[-63:].mean()) if len(vol_s) >= 5 else 0
-    return prices, avg_vol
-
-
-def fetch_market_cap(session, crumb, symbol):
-    url    = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
-    params = {"modules": "price"}
-    if crumb:
-        params["crumb"] = crumb
-    try:
-        r      = session.get(url, params=params, timeout=15)
-        r.raise_for_status()
-        result = r.json()["quoteSummary"]["result"]
-        if not result:
-            return 0
-        mc = result[0].get("price", {}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    except Exception:
-        return 0
-
-
-def calc_return(prices, days):
-    if prices is None or len(prices) < days + 1:
-        return 0.0
-    return round((prices.iloc[-1] / prices.iloc[-days] - 1) * 100, 2)
-
-
-def calc_volatility(prices, days=252):
-    if prices is None or len(pr{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex:]
-    return round(float(rets.s{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exelse 0
-    ex(prices) < 22:
-        return 0.0
-    rets    = np.log(prices / prices.shift(1)).dropna().iloc[-days:]
-    ann_ret = float(rets.mean{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exelse 0
-    ex ann_vol > 0 else 0.0
-
-
-def calc_drawdown(prices):
-    if prices is None or len(pr{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex roll_max) / {}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    excap):
-    def sig(x, scale):
-        return 100.0 / (1.0 + math.exp(-x / scale))
-    s12{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex    return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex     return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex      return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex s_cap = 50
-    elif market_c{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex * 0.30 + s6 * 0.25 + {}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex 0) if isinstance(mc, dict) else 0
-    ex end_dt):
-    sym    = info["symbol"]
-    {}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex isinstance(mc, dict) else 0
-    exand_volume(session, crumb, sym, start_dt, end_dt)
-    if prices is None or len(prices) {}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exm.uniform({}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex"marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex  r12m   = calc_return(prices, 252)
-    vol    = calc_volatility(prices)
-    {}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exs.iloc[-1]), 2)
-   {}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exx()), 2)
-    low52  = round(float(p52.min{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex= 2 else 0.0
-    s{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exict) else 0
-    ex, 3) if market_cap > 0 else 0.0
-    return {
-        "sy{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex       "return12m": r12m, "return6m": r6m, "return3m": r3m, "return1m": r1m,
-        "volatility": vol, "avgVolume": avg_vol, "sharpe": sharpe,
-        "drawdown": dd, "high52w": high52, "low52w": low52,
-        "dayChange": day_chg, "momentumScore": score, "weight": weight,
-    }
-
-
-def main():
-    print("MomentumRank - fetch_{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exdelta(days=LOOKBACK_DAYS)
-
-    print("Loading S&P 500 {}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exrs loaded")
-    print(f"  Sectors: {sorted(set(t['sector'] for t in {}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exo_session()
-    print(f"  Crumb: {'OK' if crumb else 'MISSING - r{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex()
-
-    results = []
-    total{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exickers, 1):
-        print(f"  [{i:3d}/{total}] {t['symbol']:<8}", end="", flush=True)
-       {}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex.append({}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exance(mc, dict) else 0
-    exf}B")
-        else:
-            print("  SKIPPED")
-        if i % 10{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exet_yahoo_session()
-            time.sleep(2)
-
-    results.sort(key=lambda x: x["momentumScore"], reverse=True)
-    with open(OUTPUT_FIL{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex, {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex 0)
-    print(f"\nDone: {len(results)} records -> {OUTPUT_FILE}")
-    print(f"avgVolum{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ext(f"T{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex``
-
-## Проверка преди run
-
-Файлът е пр{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    exurn mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex**Run work{}).get("marketCap", {})
-        return mc.get("raw", 0) if isinstance(mc, dict) else 0
-    ex
+'"""\n'
+'MomentumRank S&P 500 - fetch_data.py v6\n'
+'S&P 500 list: GitHub CSV (no HTML parsing)\n'
+'"""\n'
+'\n'
+'import json, time, random, math\n'
+'from datetime import datetime, timedelta\n'
+'from io import StringIO\n'
+'import pandas as pd\n'
+'import numpy as np\n'
+'import requests\n'
+'\n'
+'OUTPUT_FILE   = "data.json"\n'
+'RATE_SLEEP    = (0.35, 0.75)\n'
+'LOOKBACK_DAYS = 400\n'
+'\n'
+'SECTOR_MAP = {\n'
+'    "Information Technology":  "Technology",\n'
+'    "Health Care":             "Healthcare",\n'
+'    "Financials":              "Financial Services",\n'
+'    "Consumer Discretionary":  "Consumer Cyclical",\n'
+'    "Consumer Staples":        "Consumer Defensive",\n'
+'    "Communication Services":  "Communication Services",\n'
+'    "Materials":               "Basic Materials",\n'
+'    "Industrials":             "Industrials",\n'
+'    "Real Estate":             "Real Estate",\n'
+'    "Energy":                  "Energy",\n'
+'    "Utilities":               "Utilities",\n'
+'}\n'
+'\n'
+'\n'
+'def get_yahoo_session():\n'
+'    session = requests.Session()\n'
+'    session.headers.update({\n'
+'        "User-Agent": (\n'
+'            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "\n'
+'            "AppleWebKit/537.36 (KHTML, like Gecko) "\n'
+'            "Chrome/122.0.0.0 Safari/537.36"\n'
+'        ),\n'
+'        "Accept":          "application/json",\n'
+'        "Accept-Language": "en-US,en;q=0.9",\n'
+'    })\n'
+'    session.get("https://finance.yahoo.com", timeout=12)\n'
+'    crumb = None\n'
+'    try:\n'
+'        r = session.get(\n'
+'            "https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=10\n'
+'        )\n'
+'        if r.status_code == 200 and r.text.strip():\n'
+'            crumb = r.text.strip()\n'
+'    except Exception:\n'
+'        pass\n'
+'    return session, crumb\n'
+'\n'
+'\n'
+'def get_sp500_tickers():\n'
+'    url  = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"\n'
+'    resp = requests.get(url, timeout=15)\n'
+'    resp.raise_for_status()\n'
+'    df   = pd.read_csv(StringIO(resp.text))\n'
+'    df.columns = [c.strip() for c in df.columns]\n'
+'    records = []\n'
+'    for _, row in df.iterrows():\n'
+'        sym    = str(row.get("Symbol", row.iloc[0])).strip().replace(".", "-")\n'
+'        name   = str(row.get("Name",   row.iloc[1])).strip()\n'
+'        raw_s  = str(row.get("Sector", row.iloc[2])).strip()\n'
+'        sector = SECTOR_MAP.get(raw_s, raw_s)\n'
+'        records.append({"symbol": sym, "name": name, "sector": sector})\n'
+'    return records\n'
+'\n'
+'\n'
+'def fetch_prices_and_volume(session, crumb, symbol, start_dt, end_dt):\n'
+'    url    = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"\n'
+'    params = {\n'
+'        "interval":             "1d",\n'
+'        "period1":              int(start_dt.timestamp()),\n'
+'        "period2":              int(end_dt.timestamp()),\n'
+'        "events":               "div,splits",\n'
+'        "includeAdjustedClose": "true",\n'
+'    }\n'
+'    if crumb:\n'
+'        params["crumb"] = crumb\n'
+'    try:\n'
+'        r = session.get(url, params=params, timeout=20)\n'
+'        r.raise_for_status()\n'
+'        d = r.json()["chart"]["result"][0]\n'
+'    except Exception:\n'
+'        return None, 0\n'
+'    timestamps = d.get("timestamp", [])\n'
+'    if not timestamps:\n'
+'        return None, 0\n'
+'    try:\n'
+'        closes = d["indicators"]["adjclose"][0]["adjclose"]\n'
+'    except (KeyError, IndexError):\n'
+'        closes = d["indicators"]["quote"][0]["close"]\n'
+'    volumes = d["indicators"]["quote"][0].get("volume") or []\n'
+'    idx     = pd.to_datetime([datetime.utcfromtimestamp(t) for t in timestamps])\n'
+'    prices  = pd.Series(closes, index=idx, dtype=float).dropna()\n'
+'    vol_s   = pd.Series([v if v else 0 for v in volumes], index=idx)\n'
+'    avg_vol = int(vol_s.iloc[-63:].mean()) if len(vol_s) >= 5 else 0\n'
+'    return prices, avg_vol\n'
+'\n'
+'\n'
+'def fetch_market_cap(session, crumb, symbol):\n'
+'    url    = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"\n'
+'    params = {"modules": "price"}\n'
+'    if crumb:\n'
+'        params["crumb"] = crumb\n'
+'    try:\n'
+'        r      = session.get(url, params=params, timeout=15)\n'
+'        r.raise_for_status()\n'
+'        result = r.json()["quoteSummary"]["result"]\n'
+'        if not result:\n'
+'            return 0\n'
+'        mc = result[0].get("price", {}).get("marketCap", {})\n'
+'        return mc.get("raw", 0) if isinstance(mc, dict) else 0\n'
+'    except Exception:\n'
+'        return 0\n'
+'\n'
+'\n'
+'def calc_return(prices, days):\n'
+'    if prices is None or len(prices) < days + 1:\n'
+'        return 0.0\n'
+'    return round((prices.iloc[-1] / prices.iloc[-days] - 1) * 100, 2)\n'
+'\n'
+'\n'
+'def calc_volatility(prices, days=252):\n'
+'    if prices is None or len(prices) < 22:\n'
+'        return 0.0\n'
+'    rets = np.log(prices / prices.shift(1)).dropna().iloc[-days:]\n'
+'    return round(float(rets.std() * math.sqrt(252) * 100), 2)\n'
+'\n'
+'\n'
+'def calc_sharpe(prices, days=252, rf=0.05):\n'
+'    if prices is None or len(prices) < 22:\n'
+'        return 0.0\n'
+'    rets    = np.log(prices / prices.shift(1)).dropna().iloc[-days:]\n'
+'    ann_ret = float(rets.mean() * 252)\n'
+'    ann_vol = float(rets.std() * math.sqrt(252))\n'
+'    return round((ann_ret - rf) / ann_vol, 2) if ann_vol > 0 else 0.0\n'
+'\n'
+'\n'
+'def calc_drawdown(prices):\n'
+'    if prices is None or len(prices) < 2:\n'
+'        return 0.0\n'
+'    roll_max = prices.cummax()\n'
+'    return round(float(((prices - roll_max) / roll_max * 100).min()), 2)\n'
+'\n'
+'\n'
+'def calc_momentum_score(r1m, r3m, r6m, r12m, vol, sharpe, market_cap):\n'
+'    def sig(x, scale):\n'
+'        return 100.0 / (1.0 + math.exp(-x / scale))\n'
+'    s12   = sig(r12m, 30)\n'
+'    s6    = sig(r6m,  20)\n'
+'    s3    = sig(r3m,  15)\n'
+'    s1    = sig(r1m,  10)\n'
+'    s_sh  = sig(sharpe, 1.0)\n'
+'    s_vol = 100.0 / (1.0 + math.exp((vol - 25) / 10))\n'
+'    if   market_cap >= 200e9: s_cap = 100\n'
+'    elif market_cap >=  50e9: s_cap = 75\n'
+'    elif market_cap >=  10e9: s_cap = 50\n'
+'    elif market_cap >      0: s_cap = 25\n'
+'    else:                     s_cap = 50\n'
+'    return round(\n'
+'        s12 * 0.30 + s6 * 0.25 + s3 * 0.20 + s1 * 0.10 +\n'
+'        s_sh * 0.10 + s_vol * 0.03 + s_cap * 0.02, 1\n'
+'    )\n'
+'\n'
+'\n'
+'def process_ticker(info, session, crumb, start_dt, end_dt):\n'
+'    sym    = info["symbol"]\n'
+'    name   = info["name"]\n'
+'    sector = info["sector"]\n'
+'    time.sleep(random.uniform(*RATE_SLEEP))\n'
+'    prices, avg_vol = fetch_prices_and_volume(session, crumb, sym, start_dt, end_dt)\n'
+'    if prices is None or len(prices) < 60:\n'
+'        print(f"  SKIP {sym}: not enough data")\n'
+'        return None\n'
+'    time.sleep(random.uniform(0.1, 0.3))\n'
+'    market_cap = fetch_market_cap(session, crumb, sym)\n'
+'    r1m    = calc_return(prices, 21)\n'
+'    r3m    = calc_return(prices, 63)\n'
+'    r6m    = calc_return(prices, 126)\n'
+'    r12m   = calc_return(prices, 252)\n'
+'    vol    = calc_volatility(prices)\n'
+'    sharpe = calc_sharpe(prices)\n'
+'    dd     = calc_drawdown(prices)\n'
+'    price  = round(float(prices.iloc[-1]), 2)\n'
+'    p52    = prices.iloc[-252:] if len(prices) >= 252 else prices\n'
+'    high52 = round(float(p52.max()), 2)\n'
+'    low52  = round(float(p52.min()), 2)\n'
+'    day_chg = round((prices.iloc[-1] / prices.iloc[-2] - 1) * 100, 2) if len(prices) >= 2 else 0.0\n'
+'    score   = calc_momentum_score(r1m, r3m, r6m, r12m, vol, sharpe, market_cap)\n'
+'    weight  = round(market_cap / 1e12, 3) if market_cap > 0 else 0.0\n'
+'    return {\n'
+'        "symbol": sym, "name": name, "sector": sector,\n'
+'        "price": price, "marketCap": market_cap,\n'
+'        "return12m": r12m, "return6m": r6m, "return3m": r3m, "return1m": r1m,\n'
+'        "volatility": vol, "avgVolume": avg_vol, "sharpe": sharpe,\n'
+'        "drawdown": dd, "high52w": high52, "low52w": low52,\n'
+'        "dayChange": day_chg, "momentumScore": score, "weight": weight,\n'
+'    }\n'
+'\n'
+'\n'
+'def main():\n'
+'    print("MomentumRank - fetch_data.py v6")\n'
+'    print("=" * 52)\n'
+'    end_dt   = datetime.utcnow()\n'
+'    start_dt = end_dt - timedelta(days=LOOKBACK_DAYS)\n'
+'\n'
+'    print("Loading S&P 500 list from GitHub CSV...")\n'
+'    tickers = get_sp500_tickers()\n'
+'    print(f"  {len(tickers)} tickers loaded")\n'
+'    print(f"  Sectors: {sorted(set(t[\'sector\'] for t in tickers))}")\n'
+'\n'
+'    print("Initialising Yahoo Finance session...")\n'
+'    session, crumb = get_yahoo_session()\n'
+'    print(f"  Crumb: {\'OK\' if crumb else \'MISSING - retrying\'}")\n'
+'    if not crumb:\n'
+'        time.sleep(3)\n'
+'        session, crumb = get_yahoo_session()\n'
+'\n'
+'    results = []\n'
+'    total   = len(tickers)\n'
+'    print(f"\\nProcessing {total} tickers...\\n")\n'
+'\n'
+'    for i, t in enumerate(tickers, 1):\n'
+'        print(f"  [{i:3d}/{total}] {t[\'symbol\']:<8}", end="", flush=True)\n'
+'        rec = process_ticker(t, session, crumb, start_dt, end_dt)\n'
+'        if rec:\n'
+'            results.append(rec)\n'
+'            print(f"  score={rec[\'momentumScore\']:5.1f}  vol={rec[\'avgVolume\']:>12,}  cap=${rec[\'marketCap\']/1e9:>8.1f}B")\n'
+'        else:\n'
+'            print("  SKIPPED")\n'
+'        if i % 100 == 0:\n'
+'            print(f"\\n  Refreshing Yahoo session...\\n")\n'
+'            session, crumb = get_yahoo_session()\n'
+'            time.sleep(2)\n'
+'\n'
+'    results.sort(key=lambda x: x["momentumScore"], reverse=True)\n'
+'    with open(OUTPUT_FILE, "w") as f:\n'
+'        json.dump(results, f, indent=2)\n'
+'\n'
+'    vol_ok = sum(1 for r in results if r["avgVolume"] > 0)\n'
+'    cap_ok = sum(1 for r in results if r["marketCap"] > 0)\n'
+'    print(f"\\nDone: {len(results)} records -> {OUTPUT_FILE}")\n'
+'    print(f"avgVolume OK : {vol_ok}/{len(results)}")\n'
+'    print(f"marketCap OK : {cap_ok}/{len(results)}")\n'
+'    print(f"Top 5        : {[r[\'symbol\'] for r in results[:5]]}")\n'
+'\n'
+'\n'
+'if __name__ == "__main__":\n'
+'    main()\n'
