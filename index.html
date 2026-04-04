@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
 /* ========== RESET & BASE ========== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -854,7 +855,7 @@ body {
         <div class="kpi-value" id="kpi-portfolio">0</div>
       </div>
     </div>
-    <div class="kpi-date">Data as of March 2026</div>
+    <div class="kpi-date" id="kpi-date">Loading...</div>
   </div>
 
   <!-- Filters Bar -->
@@ -1005,7 +1006,7 @@ body {
     </div>
     <div class="sidebar-stocks" id="sidebar-stocks"></div>
     <div class="sidebar-actions">
-      <button class="btn-primary" id="export-csv">Export CSV</button>
+      <button class="btn-primary" id="export-portfolio-xlsx">&#8595; Export Excel</button>
       <button class="btn-secondary" id="clear-selection">Clear All</button>
     </div>
   </div>
@@ -1014,7 +1015,10 @@ body {
   <!-- Table Footer -->
   <div class="table-footer">
     <div class="table-footer-info" id="table-footer-info">Loading...</div>
-    <div style="font-size:10px; color: var(--text-muted);">S&P 500 Momentum Ranking &middot; MomentumRank</div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button id="export-table-xlsx" style="background:var(--card);border:1px solid var(--border);border-radius:4px;color:var(--text-secondary);font-family:inherit;font-size:10px;font-weight:500;padding:3px 9px;cursor:pointer;transition:all 0.15s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-secondary)'">&#8595; Export Table (.xlsx)</button>
+      <span style="font-size:10px; color: var(--text-muted);">S&P 500 Momentum Ranking &middot; MomentumRank</span>
+    </div>
   </div>
 </div>
 
@@ -1574,8 +1578,11 @@ body {
       updatePortfolio();
     });
 
-    // Export CSV
-    document.getElementById('export-csv').addEventListener('click', exportCSV);
+    // Export Portfolio → Excel
+    document.getElementById('export-portfolio-xlsx').addEventListener('click', exportPortfolioXlsx);
+
+    // Export Table (filtered) → Excel
+    document.getElementById('export-table-xlsx').addEventListener('click', exportTableXlsx);
 
     // Clear selection
     document.getElementById('clear-selection').addEventListener('click', () => {
@@ -1631,14 +1638,118 @@ body {
     return function(...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), ms); };
   }
 
+  // ==================== DATE DISPLAY ====================
+  function setUpdateDate(isoString) {
+    const el = document.getElementById('kpi-date');
+    if (!el) return;
+    try {
+      // isoString може да е "2026-04-04 07:45 UTC" или ISO 8601
+      const clean = isoString.replace(' UTC', 'Z').replace(' ', 'T');
+      const d = new Date(clean);
+      if (isNaN(d.getTime())) throw new Error('bad date');
+      const opts = { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short' };
+      el.textContent = 'Updated ' + d.toLocaleString('en-GB', opts);
+    } catch {
+      el.textContent = 'Updated ' + isoString;
+    }
+  }
+
+  // ==================== EXCEL EXPORT HELPERS ====================
+  function buildWorksheet(rows, headers) {
+    // rows: array of arrays matching headers order
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+    // Column widths (chars)
+    const colWidths = headers.map(h => ({ wch: Math.max(h.length + 2, 12) }));
+    ws['!cols'] = colWidths;
+
+    // Style header row bold (SheetJS community edition supports basic cell props)
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const addr = XLSX.utils.encode_cell({ r: 0, c: C });
+      if (!ws[addr]) continue;
+      ws[addr].s = { font: { bold: true }, fill: { fgColor: { rgb: 'FF1A1D27' } } };
+    }
+    return ws;
+  }
+
+  function downloadXlsx(wb, filename) {
+    XLSX.writeFile(wb, filename);
+  }
+
+  // Export PORTFOLIO (selected stocks) → Excel
+  function exportPortfolioXlsx() {
+    const items = allData.filter(d => selectedSymbols.has(d.symbol));
+    if (items.length === 0) { alert('Select stocks first using the checkboxes.'); return; }
+
+    const headers = ['Rank','Symbol','Name','Sector','Industry','Price ($)','12M Return (%)','6M Return (%)','3M Return (%)','1M Return (%)','Volatility (%)','Sharpe','Avg Volume','Market Cap ($)','Drawdown (%)','Momentum Score','Weight (%)'];
+    const rows = items.map((d, i) => [
+      i + 1, d.symbol, d.name, d.sector, d.industry || '',
+      d.price, d.return12m, d.return6m, d.return3m, d.return1m,
+      d.volatility, d.sharpe, d.avgVolume, d.marketCap,
+      d.drawdown, d.momentumScore, d.weight || 0
+    ]);
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, buildWorksheet(rows, headers), 'Portfolio');
+    const today = new Date().toISOString().slice(0, 10);
+    downloadXlsx(wb, `momentum_portfolio_${today}.xlsx`);
+  }
+
+  // Export TABLE (filtered rows, current sort) → Excel
+  function exportTableXlsx() {
+    if (!filteredData || filteredData.length === 0) { alert('No data to export.'); return; }
+
+    const headers = ['Rank','Symbol','Name','Sector','Price ($)','12M Ret (%)','6M Ret (%)','3M Ret (%)','1M Ret (%)','Volatility (%)','Sharpe','Avg Volume (M)','Market Cap ($B)','Drawdown (%)','Momentum Score'];
+    const rows = filteredData.map((d, i) => [
+      i + 1, d.symbol, d.name, d.sector,
+      d.price,
+      d.return12m, d.return6m, d.return3m, d.return1m,
+      d.volatility, d.sharpe,
+      d.avgVolume > 0 ? +(d.avgVolume / 1e6).toFixed(2) : 0,
+      d.marketCap  > 0 ? +(d.marketCap  / 1e9).toFixed(2) : 0,
+      d.drawdown, d.momentumScore
+    ]);
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, buildWorksheet(rows, headers), 'MomentumRank');
+    const today = new Date().toISOString().slice(0, 10);
+    const label = filteredData.length < allData.length ? `_filtered${filteredData.length}` : '_all';
+    downloadXlsx(wb, `momentumrank_sp500${label}_${today}.xlsx`);
+  }
+
   // ==================== LOAD DATA ====================
   async function init() {
+    // 1. Зареди data.json
+    let res;
     try {
-      const res = await fetch('data.json');
+      res = await fetch('data.json');
       allData = await res.json();
     } catch (e) {
       dom.tbody.innerHTML = '<tr><td colspan="16" class="no-results">Error loading data.json</td></tr>';
       return;
+    }
+
+    // 2. Дата на последен ъпдейт
+    //    Приоритет: data_meta.json → Last-Modified header → днешна дата
+    try {
+      const metaRes = await fetch('data_meta.json');
+      if (metaRes.ok) {
+        const meta = await metaRes.json();
+        if (meta.updated) { setUpdateDate(meta.updated); }
+        else throw new Error('no updated field');
+      } else throw new Error('no meta file');
+    } catch {
+      // Fallback: Last-Modified header от data.json
+      try {
+        const lm = res.headers.get('Last-Modified');
+        if (lm) { setUpdateDate(lm); }
+        else {
+          // Последен fallback: днешна дата
+          const el = document.getElementById('kpi-date');
+          if (el) el.textContent = 'Updated ' + new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+      } catch { /* ignore */ }
     }
 
     initSectorDropdown();
