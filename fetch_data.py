@@ -43,7 +43,7 @@ RETRY_SLEEP = 1.5
 RETRY_MAX_ATTEMPTS = 2
 
 # Fundamentals loop
-MCAP_SLEEP = (1.5, 2.5)
+MCAP_SLEEP = (0.2, 0.5)
 MCAP_MAX_RETRIES = 3
 
 # Threshold logic
