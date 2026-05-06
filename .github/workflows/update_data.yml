@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install yfinance==0.2.54 pandas numpy lxml html5lib
+          pip install yfinance==0.2.54 pandas numpy lxml html5lib curl_cffi
 
       - name: Run fetch_data.py
         run: python fetch_data.py
