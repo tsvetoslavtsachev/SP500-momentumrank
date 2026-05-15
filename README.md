@@ -70,8 +70,26 @@ python fetch_data.py          # генерира data.json (~2-3 мин)
 
 ## Momentum Score формула
 
+Текущата версия използва sigmoid-нормализация на отделните фактори и weighted composite score:
+
 ```
-weighted_return = 0.40×r12m + 0.30×r6m + 0.20×r3m + 0.10×r1m
-raw_score       = weighted_return / volatility + 0.3 × sharpe
-momentumScore   = percentile_rank(raw_score) × 100   → [0..100]
+sigmoid(x, scale) = 100 / (1 + exp(-x / scale))
+
+s12    = sigmoid(return12m, 30)
+s6     = sigmoid(return6m, 20)
+s3     = sigmoid(return3m, 15)
+s1     = sigmoid(return1m, 10)
+sSharpe = sigmoid(sharpe, 1.0)
+sVol   = 100 / (1 + exp((volatility - 25) / 10))
+
+sCap = 100  ако marketCap >= 200B
+       75   ако marketCap >= 50B
+       50   ако marketCap >= 10B или marketCap липсва
+       25   ако marketCap > 0 и < 10B
+
+momentumScore =
+  0.30×s12 + 0.25×s6 + 0.20×s3 + 0.10×s1
++ 0.10×sSharpe + 0.03×sVol + 0.02×sCap
 ```
+
+Резултатът се закръгля до 1 знак след десетичната точка и се използва за сортиране/ранкиране на компаниите.
