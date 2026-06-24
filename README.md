@@ -35,6 +35,7 @@ my-momentumrank/
 ├── index.html
 ├── data.json
 ├── fetch_data.py
+├── momentum_core.py      ← споделено ядро (vendored, идентично с EU близнака)
 ├── README.md
 └── .github/
     └── workflows/

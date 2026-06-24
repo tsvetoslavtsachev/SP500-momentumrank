@@ -7,40 +7,46 @@
 #   → това гарантира правилен weight normalization и ranking дори при failure
 # - Двустепенен threshold: fresh_rate (warn) + total_rate (hard fail)
 # - Enriched meta: fresh/stale/retry counters
+#
+# Споделено ядро: общата price-math + Yahoo plumbing е в momentum_core.py
+# (vendored, byte-identical с stoxx600-momentumrank — виж diff-журнала в
+# tsachev-ops). US-специфики ОСТАВАТ тук: Phase 0 constituent discovery,
+# Phase 2 marketCap fundamentals, size score от marketCap, rf=4.5%, output
+# schema, meta блок.
 
 import json
 import math
-import os
 import random
 import sys
 import time
 from datetime import datetime, timedelta, timezone
 from io import StringIO
 
-import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
 
-try:
-    from curl_cffi import requests as curl_requests
-    HAS_CURL_CFFI = True
-except ImportError:
-    HAS_CURL_CFFI = False
+from momentum_core import (
+    HAS_CURL_CFFI,
+    bulk_download_prices,
+    calc_drawdown,
+    calc_return,
+    calc_sharpe,
+    calc_volatility,
+    load_previous_data,
+    make_session,
+    momentum_blend,
+    _is_missing,
+)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 OUTPUT_FILE = "data.json"
 META_FILE = "data_meta.json"
 LOOKBACK_DAYS = 400
 
-# Bulk download
-BATCH_SIZE = 100
-BATCH_PAUSE = 2
-BULK_MAX_RETRIES = 3
-
-# Retry phase (Phase 1.5)
-RETRY_SLEEP = 1.5
-RETRY_MAX_ATTEMPTS = 2
+# Risk-free rate for Sharpe — US/EU parameter (S&P 500 ≈ US T-bill). Passed
+# explicitly into momentum_core.calc_sharpe; the EU twin uses 2.5% (≈ Bund).
+RF = 0.045
 
 # Fundamentals loop
 MCAP_SLEEP = (0.2, 0.5)
@@ -65,33 +71,6 @@ SECTOR_MAP = {
 }
 
 
-# ── curl_cffi session ────────────────────────────────────────────────────────
-def make_session():
-    if not HAS_CURL_CFFI:
-        return None
-    try:
-        return curl_requests.Session(impersonate="chrome")
-    except Exception as e:
-        print(f"WARN: curl_cffi session init failed: {e}")
-        return None
-
-
-# ── Зареди предишен data.json (пълни записи) ──────────────────────────────────
-def load_previous_data():
-    """Връща {symbol: full_record_dict} от предишен run."""
-    if not os.path.exists(OUTPUT_FILE):
-        return {}
-    try:
-        with open(OUTPUT_FILE, "r") as f:
-            data = json.load(f)
-        if not isinstance(data, list):
-            return {}
-        return {r["symbol"]: r for r in data if "symbol" in r}
-    except Exception as e:
-        print(f"WARN: could not load previous {OUTPUT_FILE}: {e}")
-        return {}
-
-
 # ── S&P 500 list ──────────────────────────────────────────────────────────────
 def get_sp500_tickers():
     url = (
@@ -111,135 +90,6 @@ def get_sp500_tickers():
         sector = SECTOR_MAP.get(raw_s, raw_s)
         records.append({"symbol": sym, "name": name, "sector": sector})
     return records
-
-
-# ── Phase 1.5: Retry missing tickers (threads=False) ──────────────────────────
-def retry_missing_prices(missing_symbols, start_dt, end_dt, session=None):
-    """
-    Per-ticker retry за тикери, които fail-наха в bulk fetch-а.
-    threads=False избягва SQLite cache contention, която е най-честата причина
-    за грешки от типа 'database is locked'.
-    """
-    result = {}
-    if not missing_symbols:
-        return result
-
-    print(f"  Retry phase: {len(missing_symbols)} tickers (threads=False)")
-    for sym in missing_symbols:
-        success = False
-        for attempt in range(1, RETRY_MAX_ATTEMPTS + 1):
-            try:
-                time.sleep(RETRY_SLEEP + random.uniform(0, 0.5))
-                data = yf.download(
-                    tickers=[sym],
-                    start=start_dt.strftime("%Y-%m-%d"),
-                    end=end_dt.strftime("%Y-%m-%d"),
-                    auto_adjust=True,
-                    actions=False,
-                    progress=False,
-                    threads=False,        # ← key: no concurrency, no SQLite race
-                    session=session,
-                )
-
-                if data.empty:
-                    continue
-
-                # Single-ticker fetch → flat columns, без MultiIndex
-                if isinstance(data.columns, pd.MultiIndex):
-                    # yfinance понякога връща MultiIndex дори за един тикер
-                    if (sym, "Close") in data.columns:
-                        prices = data[(sym, "Close")].dropna().astype(float)
-                        volumes = data[(sym, "Volume")].fillna(0).astype(float)
-                    else:
-                        continue
-                else:
-                    if "Close" not in data.columns:
-                        continue
-                    prices = data["Close"].dropna().astype(float)
-                    volumes = data["Volume"].fillna(0).astype(float)
-
-                if len(prices) >= 60:
-                    result[sym] = {"prices": prices, "volumes": volumes}
-                    print(f"    ✓ recovered {sym}")
-                    success = True
-                    break
-            except Exception as e:
-                if attempt >= RETRY_MAX_ATTEMPTS:
-                    print(f"    ✗ {sym}: {e}")
-
-        if not success and sym not in result:
-            # Няма какво повече да правим на този етап — stale fallback идва по-късно
-            pass
-
-    return result
-
-
-# ── Phase 1: Bulk price download ──────────────────────────────────────────────
-def bulk_download_prices(tickers, start_dt, end_dt, session=None):
-    result = {}
-    symbols = [t["symbol"] for t in tickers]
-
-    for i in range(0, len(symbols), BATCH_SIZE):
-        batch = symbols[i : i + BATCH_SIZE]
-        batch_num = i // BATCH_SIZE + 1
-        total_batches = (len(symbols) + BATCH_SIZE - 1) // BATCH_SIZE
-        print(f"  Batch {batch_num}/{total_batches}: {len(batch)} tickers...", flush=True)
-
-        data = pd.DataFrame()
-        for attempt in range(1, BULK_MAX_RETRIES + 1):
-            try:
-                data = yf.download(
-                    tickers=batch,
-                    start=start_dt.strftime("%Y-%m-%d"),
-                    end=end_dt.strftime("%Y-%m-%d"),
-                    auto_adjust=True,
-                    actions=False,
-                    progress=False,
-                    group_by="ticker",
-                    threads=True,
-                    session=session,
-                )
-                break
-            except Exception as e:
-                if attempt < BULK_MAX_RETRIES:
-                    wait = 2 ** attempt + random.uniform(0, 1)
-                    print(f"    retry {attempt}: {e} (wait {wait:.1f}s)")
-                    time.sleep(wait)
-                else:
-                    print(f"    FAILED batch {batch_num}: {e}")
-
-        if data.empty:
-            continue
-
-        for sym in batch:
-            try:
-                if isinstance(data.columns, pd.MultiIndex):
-                    if (sym, "Close") not in data.columns:
-                        continue
-                    prices = data[(sym, "Close")].dropna().astype(float)
-                    volumes = data[(sym, "Volume")].fillna(0).astype(float)
-                else:
-                    if len(batch) != 1 or "Close" not in data.columns:
-                        continue
-                    prices = data["Close"].dropna().astype(float)
-                    volumes = data["Volume"].fillna(0).astype(float)
-
-                if len(prices) >= 60:
-                    result[sym] = {"prices": prices, "volumes": volumes}
-            except Exception as e:
-                print(f"    WARN {sym}: extract failed: {e}")
-
-        if i + BATCH_SIZE < len(symbols):
-            time.sleep(BATCH_PAUSE)
-
-    # ── Phase 1.5: retry на missing ──────────────────────────────────────────
-    missing = [t["symbol"] for t in tickers if t["symbol"] not in result]
-    if missing:
-        recovered = retry_missing_prices(missing, start_dt, end_dt, session=session)
-        result.update(recovered)
-        return result, len(recovered)
-
-    return result, 0
 
 
 # ── Phase 2: Fundamentals ─────────────────────────────────────────────────────
@@ -287,93 +137,26 @@ def fetch_fundamentals(symbol, session=None):
     return 0, 0
 
 
-# ── Изчисления (идентични с v9) ───────────────────────────────────────────────
-def calc_return(prices, trading_days):
-    # Insufficient history → NaN, NOT 0.0. A forced 0.0 looks like a real "flat"
-    # return: sig(0)=50, a neutral signal that silently pulls a partial-history
-    # stock's momentum score toward the middle. NaN instead drops the term from
-    # the score (see calc_momentum_score) and is flagged as partial_history.
-    if prices is None or len(prices) < trading_days + 1:
-        return float("nan")
-    return round((prices.iloc[-1] / prices.iloc[-(trading_days + 1)] - 1) * 100, 2)
-
-
-def calc_volatility(prices, trading_days=252):
-    if prices is None or len(prices) < 22:
-        return 0.0
-    rets = np.log(prices / prices.shift(1)).dropna()
-    if len(rets) > trading_days:
-        rets = rets.iloc[-trading_days:]
-    return round(float(rets.std() * math.sqrt(252) * 100), 2)
-
-
-def calc_sharpe(prices, trading_days=252, rf=0.045):
-    if prices is None or len(prices) < 22:
-        return 0.0
-    rets = np.log(prices / prices.shift(1)).dropna()
-    if len(rets) > trading_days:
-        rets = rets.iloc[-trading_days:]
-    ann_ret = float(rets.mean() * 252)
-    ann_vol = float(rets.std() * math.sqrt(252))
-    if ann_vol <= 0:
-        return 0.0
-    return round((ann_ret - rf) / ann_vol, 2)
-
-
-def calc_drawdown(prices):
-    if prices is None or len(prices) < 2:
-        return 0.0
-    roll_max = prices.expanding().max()
-    dd_series = (prices - roll_max) / roll_max * 100
-    return round(float(dd_series.min()), 2)
-
-
-def _is_missing(x):
-    return x is None or (isinstance(x, float) and math.isnan(x))
+# ── Momentum score (US size score from marketCap) ─────────────────────────────
+def size_score_from_mcap(market_cap):
+    """marketCap → size score [0-100]. US-specific size source; the EU twin uses
+    size_score_from_weight (iShares weight). Both feed momentum_core.momentum_blend."""
+    if market_cap >= 200e9:
+        return 100
+    elif market_cap >= 50e9:
+        return 75
+    elif market_cap >= 10e9:
+        return 50
+    elif market_cap > 0:
+        return 25
+    else:
+        return 50
 
 
 def calc_momentum_score(r1m, r3m, r6m, r12m, vol, sharpe, market_cap):
-    def sig(x, scale):
-        exp_arg = max(-50, min(50, -x / scale))
-        return 100.0 / (1.0 + math.exp(exp_arg))
-
-    # (weight, component) pairs. A missing input (NaN — e.g. a return window the
-    # stock lacks the history for) is dropped and its weight redistributed across
-    # the present components, so missing history does NOT silently pull the score
-    # toward the neutral sig(0)=50. With full data the present weights sum to 1.0,
-    # so the result is identical to the original weighted blend.
-    terms = []
-    if not _is_missing(r12m):
-        terms.append((0.30, sig(r12m, 30)))
-    if not _is_missing(r6m):
-        terms.append((0.25, sig(r6m, 20)))
-    if not _is_missing(r3m):
-        terms.append((0.20, sig(r3m, 15)))
-    if not _is_missing(r1m):
-        terms.append((0.10, sig(r1m, 10)))
-    if not _is_missing(sharpe):
-        terms.append((0.10, sig(sharpe, 1.0)))
-    if not _is_missing(vol):
-        terms.append((0.03, 100.0 / (1.0 + math.exp(max(-50, min(50, (vol - 25) / 10))))))
-
-    # Market-cap bucket is always present (0 → neutral 50), so the score is never
-    # fully undefined.
-    if market_cap >= 200e9:
-        s_cap = 100
-    elif market_cap >= 50e9:
-        s_cap = 75
-    elif market_cap >= 10e9:
-        s_cap = 50
-    elif market_cap > 0:
-        s_cap = 25
-    else:
-        s_cap = 50
-    terms.append((0.02, s_cap))
-
-    weight_total = sum(w for w, _ in terms)
-    if weight_total == 0:
-        return float("nan")
-    return round(sum(w * c for w, c in terms) / weight_total, 1)
+    """US wrapper: marketCap → size_score → shared momentum_blend. The (r1m..vol,
+    sharpe) blend is identical to the EU twin; only the size source differs."""
+    return momentum_blend(r1m, r3m, r6m, r12m, vol, sharpe, size_score_from_mcap(market_cap))
 
 
 # ── Обработка на един тикер ───────────────────────────────────────────────────
@@ -392,7 +175,7 @@ def process_ticker(info, prices, volumes, market_cap, avg_volume):
     r6m = calc_return(prices, 126)
     r12m = calc_return(prices, 252)
     vol = calc_volatility(prices)
-    shp = calc_sharpe(prices)
+    shp = calc_sharpe(prices, RF)
     dd = calc_drawdown(prices)
 
     price = round(float(prices.iloc[-1]), 2)
