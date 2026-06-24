@@ -71,8 +71,21 @@ python fetch_data.py          # генерира data.json (~2-3 мин)
 
 ## Momentum Score формула
 
+`momentum_core.momentum_blend` — sigmoid blend, не percentile. Всеки компонент
+минава през сигмоида `sig(x) = 100 / (1 + exp(-x / scale))`, после се претегля:
+
 ```
-weighted_return = 0.40×r12m + 0.30×r6m + 0.20×r3m + 0.10×r1m
-raw_score       = weighted_return / volatility + 0.3 × sharpe
-momentumScore   = percentile_rank(raw_score) × 100   → [0..100]
+component         тегло   scale
+12M return         0.30     30
+6M return          0.25     20
+3M return          0.20     15
+1M return          0.10     10
+Sharpe             0.10     1.0
+Volatility         0.03     инвертиран (център 25 → висока vol = нисък скор)
+Size (marketCap)   0.02     bracket score 0–100, без сигмоида
+
+momentumScore = Σ(тегло × компонент) / Σ(тегла)   → [0..100]
 ```
+
+Липсващ компонент (напр. акция с < 12м история → NaN return) се изхвърля и теглото
+му се преразпределя върху наличните — частична история не дърпа скора към 50.
