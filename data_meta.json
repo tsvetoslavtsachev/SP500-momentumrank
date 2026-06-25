@@ -1,15 +1,15 @@
 {
-  "updated": "2026-06-24 11:24 UTC",
-  "count": 502,
-  "fresh_count": 502,
+  "updated": "2026-06-25 11:17 UTC",
+  "count": 501,
+  "fresh_count": 501,
   "stale_count": 0,
   "retry_recovered": 0,
   "mcap_fallback_used": 0,
-  "vol_ok": 502,
-  "cap_ok": 502,
+  "vol_ok": 501,
+  "cap_ok": 501,
   "partial_history_count": 1,
-  "fresh_rate": 0.998,
-  "total_rate": 0.998,
+  "fresh_rate": 0.996,
+  "total_rate": 0.996,
   "stale": false,
   "warnings": []
 }
