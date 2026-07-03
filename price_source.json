@@ -227,7 +227,7 @@
     "HIG": "base",
     "HII": "base",
     "HLT": "base",
-    "HON": "fetch",
+    "HON": "base",
     "HONA": "missing",
     "HOOD": "base",
     "HPE": "base",
@@ -507,7 +507,7 @@
   "summary": {
     "expected": 503,
     "covered": 503,
-    "base": 495,
-    "fetch": 8
+    "base": 496,
+    "fetch": 7
   }
 }
