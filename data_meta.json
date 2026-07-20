@@ -1,10 +1,10 @@
 {
-  "updated": "2026-07-17 10:21 UTC",
+  "updated": "2026-07-20 11:24 UTC",
   "count": 501,
   "fresh_count": 501,
   "stale_count": 0,
   "retry_recovered": 0,
-  "mcap_fallback_used": 0,
+  "mcap_fallback_used": 1,
   "vol_ok": 501,
   "cap_ok": 501,
   "partial_history_count": 1,
