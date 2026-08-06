@@ -151,7 +151,6 @@
     "DVA": "base",
     "DVN": "base",
     "DXCM": "base",
-    "EA": "base",
     "EBAY": "base",
     "ECHO": "base",
     "ECL": "base",
@@ -505,9 +504,9 @@
     "ZTS": "base"
   },
   "summary": {
-    "expected": 503,
-    "covered": 503,
-    "base": 503,
+    "expected": 502,
+    "covered": 502,
+    "base": 502,
     "fetch": 0
   }
 }
