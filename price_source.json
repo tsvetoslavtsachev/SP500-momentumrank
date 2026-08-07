@@ -186,6 +186,7 @@
     "FDX": "base",
     "FDXF": "base",
     "FE": "base",
+    "FERG": "fetch",
     "FFIV": "base",
     "FICO": "base",
     "FIS": "base",
@@ -504,9 +505,9 @@
     "ZTS": "base"
   },
   "summary": {
-    "expected": 502,
-    "covered": 502,
+    "expected": 503,
+    "covered": 503,
     "base": 502,
-    "fetch": 0
+    "fetch": 1
   }
 }
