@@ -3,6 +3,10 @@ name: Update MomentumRank Data
 on:
   schedule:
     - cron: "37 8 * * 1-5"
+    # Sat 03:43 UTC — after price-daily (00:37) writes Friday's close, before the
+    # satellite collect (06:13); odd minutes dodge the round-hour scheduler queue.
+    # Serialized after the rotation radars (03:07/03:19/03:31) in the queue.
+    - cron: "43 3 * * 6"
   workflow_dispatch:
 
 permissions:
