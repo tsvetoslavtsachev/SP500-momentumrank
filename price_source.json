@@ -44,7 +44,6 @@
     "ARE": "base",
     "ARES": "base",
     "ATO": "base",
-    "AVB": "base",
     "AVGO": "base",
     "AVY": "base",
     "AWK": "base",
@@ -164,7 +163,6 @@
     "EMR": "base",
     "EOG": "base",
     "EQIX": "base",
-    "EQR": "base",
     "EQT": "base",
     "ERIE": "base",
     "ES": "base",
@@ -387,6 +385,7 @@
     "Q": "base",
     "QCOM": "base",
     "RCL": "base",
+    "RDDT": "fetch",
     "REG": "base",
     "REGN": "base",
     "RF": "base",
@@ -470,6 +469,7 @@
     "VLO": "base",
     "VLTO": "base",
     "VMC": "base",
+    "VMRK": "fetch",
     "VRSK": "base",
     "VRSN": "base",
     "VRT": "base",
@@ -507,7 +507,7 @@
   "summary": {
     "expected": 503,
     "covered": 503,
-    "base": 502,
-    "fetch": 1
+    "base": 500,
+    "fetch": 3
   }
 }
