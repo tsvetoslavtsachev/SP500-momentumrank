@@ -469,7 +469,7 @@
     "VLO": "base",
     "VLTO": "base",
     "VMC": "base",
-    "VMRK": "missing",
+    "VMRK": "fetch",
     "VRSK": "base",
     "VRSN": "base",
     "VRT": "base",
