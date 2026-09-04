@@ -385,7 +385,7 @@
     "Q": "base",
     "QCOM": "base",
     "RCL": "base",
-    "RDDT": "missing",
+    "RDDT": "fetch",
     "REG": "base",
     "REGN": "base",
     "RF": "base",
