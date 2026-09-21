@@ -56,13 +56,13 @@
     "BAX": "base",
     "BBY": "base",
     "BDX": "base",
+    "BE": "fetch",
     "BEN": "base",
     "BF-B": "base",
     "BG": "base",
     "BIIB": "base",
     "BKNG": "base",
     "BKR": "base",
-    "BLDR": "base",
     "BLK": "base",
     "BMY": "base",
     "BNY": "base",
@@ -243,6 +243,7 @@
     "IDXX": "base",
     "IEX": "base",
     "IFF": "base",
+    "ILMN": "fetch",
     "INCY": "base",
     "INTC": "base",
     "INTU": "base",
@@ -353,6 +354,7 @@
     "ORLY": "base",
     "OTIS": "base",
     "OXY": "base",
+    "P": "fetch",
     "PANW": "base",
     "PAYX": "base",
     "PCAR": "base",
@@ -426,7 +428,6 @@
     "SYK": "base",
     "SYY": "base",
     "T": "base",
-    "TAP": "base",
     "TDG": "base",
     "TDY": "base",
     "TECH": "base",
@@ -448,7 +449,6 @@
     "TSLA": "base",
     "TSN": "base",
     "TT": "base",
-    "TTD": "base",
     "TTWO": "base",
     "TXN": "base",
     "TXT": "base",
@@ -507,7 +507,7 @@
   "summary": {
     "expected": 503,
     "covered": 503,
-    "base": 501,
-    "fetch": 2
+    "base": 498,
+    "fetch": 5
   }
 }
