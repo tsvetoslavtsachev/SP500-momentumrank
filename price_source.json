@@ -183,7 +183,7 @@
     "FDX": "base",
     "FDXF": "base",
     "FE": "base",
-    "FERG": "fetch",
+    "FERG": "missing",
     "FFIV": "base",
     "FICO": "base",
     "FIS": "base",
@@ -404,7 +404,7 @@
     "SCHW": "base",
     "SHW": "base",
     "SJM": "base",
-    "SKYD": "fetch",
+    "SKYD": "base",
     "SLB": "base",
     "SMCI": "base",
     "SNA": "base",
@@ -507,7 +507,7 @@
   "summary": {
     "expected": 503,
     "covered": 503,
-    "base": 495,
-    "fetch": 8
+    "base": 496,
+    "fetch": 7
   }
 }
