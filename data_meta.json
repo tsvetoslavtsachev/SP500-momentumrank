@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-28 15:23 UTC",
+  "updated": "2026-10-29 15:29 UTC",
   "count": 502,
   "fresh_count": 502,
   "stale_count": 0,
@@ -7,7 +7,7 @@
   "mcap_fallback_used": 0,
   "vol_ok": 502,
   "cap_ok": 502,
-  "partial_history_count": 3,
+  "partial_history_count": 2,
   "fresh_rate": 0.998,
   "total_rate": 0.998,
   "stale": false,
