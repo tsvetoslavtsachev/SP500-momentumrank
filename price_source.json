@@ -273,7 +273,6 @@
     "KMI": "base",
     "KO": "base",
     "KR": "base",
-    "KVUE": "base",
     "L": "base",
     "LDOS": "base",
     "LEN": "base",
@@ -347,6 +346,7 @@
     "O": "base",
     "ODFL": "base",
     "OKE": "base",
+    "OKTA": "fetch",
     "OMC": "base",
     "ON": "base",
     "ORCL": "base",
@@ -507,7 +507,7 @@
   "summary": {
     "expected": 503,
     "covered": 503,
-    "base": 496,
-    "fetch": 7
+    "base": 495,
+    "fetch": 8
   }
 }
