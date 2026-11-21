@@ -7,6 +7,9 @@
 #   → това гарантира правилен weight normalization и ranking дори при failure
 # - Двустепенен threshold: fresh_rate (warn) + total_rate (hard fail)
 # - Enriched meta: fresh/stale/retry counters
+# - МЕТ1 (22.11.2026): компания с няколко класа акции (Alphabet, News Corp, Fox) влиза в
+#   weight веднъж: всеки клас тежи с цена × своите акции (classShares). marketCap и
+#   size score не са пипнати.
 #
 # Споделено ядро: общата price-math + Yahoo plumbing е в momentum_core.py
 # (vendored, byte-identical с stoxx600-momentumrank — виж diff-журнала в
@@ -17,6 +20,7 @@
 import json
 import math
 import random
+import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -158,6 +162,76 @@ def fetch_fundamentals(symbol, session=None):
                 return 0, 0
 
     return 0, 0
+
+
+# ── Класовете акции: една компания влиза в теглото веднъж (МЕТ1, 22.11.2026) ──
+# Yahoo дава на всеки клас пазарната капитализация на ЦЯЛАТА компания
+# (fast_info.market_cap = цена × implied shares на всички класове). Alphabet
+# влизаше два пъти (GOOGL 4,92 + GOOG 4,90). За теглото всеки клас носи само
+# своя дял: цена × акциите в обращение ОТ ТОЗИ КЛАС (info.sharesOutstanding).
+# marketCap в реда остава непроменен: той храни size score (методът не се пипа)
+# и колоната Mkt Cap на страницата.
+_CLASS_RE = re.compile(r"^(?P<base>.+?)\s*\(Class [A-Z]\)\s*$")
+
+
+def share_class_groups(tickers):
+    """{symbol: (base_name, n_classes)} за символите, чиято компания има поне
+    два реда в списъка. Познава ги по името от списъка: „X (Class A)“."""
+    by_base = {}
+    for t in tickers:
+        m = _CLASS_RE.match(t.get("name", ""))
+        if m:
+            by_base.setdefault(m.group("base").strip().lower(), []).append(t["symbol"])
+    groups = {}
+    for base, syms in by_base.items():
+        if len(syms) >= 2:
+            for s in syms:
+                groups[s] = (base, len(syms))
+    return groups
+
+
+def fetch_class_shares(symbol, session=None):
+    """Акциите в обращение само от този клас; 0 при неуспех."""
+    for attempt in range(1, MCAP_MAX_RETRIES + 1):
+        try:
+            ticker = yf.Ticker(symbol, session=session) if session else yf.Ticker(symbol)
+            return int(ticker.info.get("sharesOutstanding", 0) or 0)
+        except Exception:
+            if attempt < MCAP_MAX_RETRIES:
+                time.sleep(2 * attempt)
+    return 0
+
+
+def compute_weights(results, groups):
+    """Слага r["weight"] (в проценти, сбор 100) на всички редове.
+
+    Обикновен ред: тегло по marketCap. Ред от група класове: по цена × classShares;
+    ако за реда няма classShares, по marketCap / броя класове (компанията пак
+    влиза веднъж, само делът между класовете е по-груб). r["weightBasis"] казва
+    кое е ползвано за реда от група."""
+    caps = {}
+    for r in results:
+        sym = r["symbol"]
+        mcap = r.get("marketCap", 0) or 0
+        if mcap <= 0:
+            caps[sym] = 0.0
+            continue
+        if sym in groups:
+            shares = r.get("classShares", 0) or 0
+            price = r.get("price") or 0
+            if shares > 0 and price > 0:
+                caps[sym] = price * shares
+                r["weightBasis"] = "classShares"
+            else:
+                caps[sym] = mcap / groups[sym][1]
+                r["weightBasis"] = "marketCap/classes"
+        else:
+            caps[sym] = float(mcap)
+    total_cap = sum(caps.values())
+    for r in results:
+        c = caps.get(r["symbol"], 0.0)
+        r["weight"] = round(c / total_cap * 100, 4) if total_cap > 0 and c > 0 else 0.0
+    return results
 
 
 # ── Momentum score (US size score from marketCap) ─────────────────────────────
@@ -390,6 +464,8 @@ def main():
     fundamentals = {}
     mcap_fallback_used = []
     total = len(tickers)
+    class_groups = share_class_groups(tickers)
+    class_shares: dict[str, int] = {}
 
     for i, t in enumerate(tickers, 1):
         sym = t["symbol"]
@@ -412,6 +488,8 @@ def main():
                 avol = fallback
 
         fundamentals[sym] = (mcap, avol)
+        if sym in class_groups:
+            class_shares[sym] = fetch_class_shares(sym, session=session)
 
         if i % 50 == 0:
             cap_ok = sum(1 for v in fundamentals.values() if v[0] > 0)
@@ -460,12 +538,21 @@ def main():
     print()
 
     # ── Weight normalization + sort + rank (върху ВСИЧКИ записи) ─────────
-    total_cap = sum(r["marketCap"] for r in results if r["marketCap"] > 0)
+    # Класовете акции: classShares на всеки ред от група (днешното, иначе вчерашното).
+    groups = class_groups
+    if groups:
+        print(f"  Share-class groups: {', '.join(sorted(groups))}")
     for r in results:
-        if total_cap > 0 and r["marketCap"] > 0:
-            r["weight"] = round(r["marketCap"] / total_cap * 100, 4)
-        else:
-            r["weight"] = 0.0
+        sym = r["symbol"]
+        if sym not in groups:
+            r.pop("classShares", None)
+            r.pop("weightBasis", None)
+            continue
+        shares = class_shares.get(sym, 0) if not r.get("stale") else 0
+        if shares <= 0 and sym in prev_data:
+            shares = prev_data[sym].get("classShares", 0) or 0
+        r["classShares"] = int(shares)
+    compute_weights(results, groups)
 
     results.sort(key=lambda x: x["momentumScore"], reverse=True)
     for rank, r in enumerate(results, 1):
